@@ -351,6 +351,8 @@
         Paste the URL you get after deploying the included <code>Code.gs</code> as a Web app.
         It's kept on this device only.
       </p>
+      <button type="button" class="btn-ghost" id="btnTest" style="margin-top:10px">Test connection</button>
+      <div id="testStatus" class="saved-note"></div>
     </div>
   </details>
 
@@ -786,32 +788,63 @@ let roastHistory = [];   // not "history" — that name shadows window.history
 
 function setHistStatus(msg, kind){ const s=$("histStatus"); s.textContent=msg||""; s.className="status "+(kind||""); }
 
+// Shared JSONP GET: the only way to READ across origins from Apps Script (CORS
+// blocks a normal fetch from reading the reply). Loads the reply as a <script>.
+function jsonpGet(url, onData, onError){
+  const cb = "emberCb_" + Date.now() + "_" + Math.floor(Math.random()*1e6);
+  const script = document.createElement("script");
+  let done = false;
+  const cleanup = ()=>{ delete window[cb]; script.remove(); };
+  const timer = setTimeout(()=>{ if(!done){ done=true; cleanup(); onError("timeout"); } }, 12000);
+  window[cb] = (data)=>{ if(done) return; done=true; clearTimeout(timer); cleanup(); onData(data); };
+  script.onerror = ()=>{ if(done) return; done=true; clearTimeout(timer); cleanup(); onError("network"); };
+  script.src = url + (url.indexOf("?")>=0 ? "&" : "?") + "callback=" + cb;
+  document.body.appendChild(script);
+}
+
 function loadHistory(){
   const url = $("url").value.trim();
   if(!url){ setHistStatus("Add your Apps Script URL in Connection settings first.","err"); $("settings").open=true; return; }
   setHistStatus("Loading…");
-
-  // JSONP: we can't fetch+read across origins (CORS), so we ask the script to
-  // hand back its data wrapped in a function call and load it as a <script>.
-  const cb = "emberCb_" + Date.now();
-  const script = document.createElement("script");
-  const cleanup = ()=>{ delete window[cb]; script.remove(); };
-
-  window[cb] = (data)=>{
-    cleanup();
+  jsonpGet(url, (data)=>{
     if(data && data.status === "ok"){
       roastHistory = (data.roasts || []).map(normalizeRoast);
-      $("histSearch").disabled = false;
+      $("histSearch").disabled = roastHistory.length===0;
       renderHistory();
       setHistStatus(roastHistory.length + " roast" + (roastHistory.length===1?"":"s") + " loaded.", "ok");
     } else {
       setHistStatus("Sheet responded with an error: " + (data && data.message || "unknown"), "err");
     }
-  };
-  script.onerror = ()=>{ cleanup(); setHistStatus("Couldn't reach the sheet. Re-deploy Code.gs (new version) and check the URL.","err"); };
-  script.src = url + (url.indexOf("?")>=0 ? "&" : "?") + "callback=" + cb;
-  document.body.appendChild(script);
+  }, (reason)=>{
+    setHistStatus(reason==="timeout"
+      ? "No response — if you're using the in-app preview, open your hosted page instead."
+      : "Couldn't reach the sheet. Check the URL and that you re-deployed a new version.", "err");
+  });
 }
+
+// Read-back test that actually reports success/failure (unlike the optimistic Save).
+function testConnection(){
+  const url = $("url").value.trim();
+  const el = $("testStatus");
+  if(!url){ el.textContent="Enter your Apps Script URL first."; el.className="saved-note warn"; return; }
+  el.textContent="Testing…"; el.className="saved-note";
+  jsonpGet(url, (data)=>{
+    if(data && data.status === "ok"){
+      const n=(data.roasts||[]).length;
+      el.textContent="Connected ✓ — "+n+" roast"+(n===1?"":"s")+" in your sheet.";
+      el.className="saved-note ok";
+    } else {
+      el.textContent="Reached it, but it returned an error: "+(data&&data.message||"unknown")+".";
+      el.className="saved-note warn";
+    }
+  }, (reason)=>{
+    el.textContent = reason==="timeout"
+      ? "No response. If you're in the in-app preview, this is expected — open your hosted page and test there."
+      : "Couldn't reach it. Check the URL, set the deployment's access to “Anyone,” and re-deploy a New version.";
+    el.className="saved-note warn";
+  });
+}
+$("btnTest").addEventListener("click", testConnection);
 
 // Sheet cells come back as numbers/dates/strings/blanks — tidy them for the app.
 function normalizeRoast(r){
@@ -973,6 +1006,10 @@ $("btnLoad").addEventListener("click", loadHistory);
 $("histSearch").addEventListener("input", ()=>renderHistory());
 
 render();
+
+// if a sheet URL is already saved on this device, pull history automatically so
+// past roasts (with their edit/delete controls) show up without an extra click
+if($("url").value.trim()) loadHistory();
 </script>
 </body>
 </html>
