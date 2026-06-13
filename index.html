@@ -96,6 +96,9 @@
          color:var(--cream);font-variant-numeric:tabular-nums}
   .clock .phase{display:block;font-size:11px;letter-spacing:.18em;text-transform:uppercase;
                 color:var(--ember);font-weight:700;margin-bottom:2px}
+  .clock .subclock{display:block;font-size:13px;font-weight:400;letter-spacing:.06em;
+                   color:var(--muted);margin-top:3px}
+  .clock .subclock b{color:var(--cream);font-weight:600}
   .timer-btns{display:flex;flex-direction:column;gap:8px;min-width:150px}
   button{font-family:var(--sans);font-weight:700;font-size:13px;letter-spacing:.04em;
          border:none;border-radius:9px;padding:11px 14px;cursor:pointer;transition:transform .04s ease}
@@ -128,6 +131,7 @@
   /* ---------- Curve ---------- */
   .curve-wrap{margin-top:6px;background:var(--bg);border:1px solid var(--line);
               border-radius:12px;padding:12px}
+  #curve{display:block;width:100%;height:200px}
   .curve-cap{font-family:var(--mono);font-size:11px;color:var(--muted);
              display:flex;justify-content:space-between;margin-top:4px}
 
@@ -161,6 +165,16 @@
   tr.hist-row{cursor:pointer}
   tr.hist-row:hover td{background:var(--panel-2);color:var(--hot)}
   .hist-load{color:var(--ember);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  .hist-del{background:transparent;border:0.5px solid var(--line);color:var(--muted);
+    border-radius:6px;padding:4px 9px;font-size:12px;cursor:pointer;font-family:var(--sans);white-space:nowrap}
+  .hist-del:hover{color:var(--bad);border-color:var(--bad)}
+  .hist-del.arm{color:var(--bad);border-color:var(--bad);font-weight:700}
+  .favbtn{background:transparent;border:0.5px solid var(--line);color:var(--muted);
+    border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;font-family:var(--sans)}
+  .favbtn.on{border-color:var(--ember);color:var(--ember)}
+  .hist-fav{background:transparent;border:none;color:var(--line);font-size:16px;
+    cursor:pointer;padding:2px 4px;line-height:1}
+  .hist-fav.on{color:var(--ember)}
 
   /* ---------- Saved-state note ---------- */
   .saved-note{font-family:var(--mono);font-size:12px;margin-top:8px;min-height:1em}
@@ -196,6 +210,7 @@
 
     .readout{padding:8px 10px}
     .readout .v{font-size:18px}
+    #curve{height:160px}
 
     .stars .star{width:34px;height:34px}          /* easier to tap accurately */
 
@@ -205,7 +220,7 @@
 
     /* wide tables: let them scroll sideways, and hide Process to keep them legible */
     #histBody,.log{overflow-x:auto;-webkit-overflow-scrolling:touch}
-    #histBody th:nth-child(3),#histBody td:nth-child(3){display:none}
+    #histBody th:nth-child(4),#histBody td:nth-child(4){display:none}
   }
 </style>
 </head>
@@ -230,7 +245,7 @@
         <div><label for="date">Date</label><input type="date" id="date"></div>
         <div><label for="process">Process</label>
           <select id="process">
-            <option>Washed</option><option>Natural</option><option>Honey</option>
+            <option>Washed</option><option>Natural (Dry)</option><option>Honey</option>
             <option>Anaerobic</option><option>Wet-hulled</option><option>Other</option>
           </select>
         </div>
@@ -241,11 +256,9 @@
         <input type="text" id="origin" placeholder="e.g. Ethiopia Yirgacheffe">
       </div>
 
-      <div class="row">
-        <div><label for="green">Green in (g)</label>
-          <input type="number" id="green" min="0" step="1" placeholder="250"></div>
-        <div><label for="roasted">Roasted out (g)</label>
-          <input type="number" id="roasted" min="0" step="1" placeholder="210"></div>
+      <div class="field">
+        <label for="green">Green in (g)</label>
+        <input type="number" id="green" min="0" step="1" placeholder="250">
       </div>
 
       <div class="check">
@@ -255,7 +268,10 @@
 
       <div class="field">
         <label>Rating</label>
-        <div class="stars" id="stars"></div>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div class="stars" id="stars"></div>
+          <button type="button" id="favBtn" class="favbtn" aria-pressed="false">♡ Favorite</button>
+        </div>
       </div>
 
       <div class="field">
@@ -278,6 +294,7 @@
         <div class="clock">
           <span class="phase" id="tPhase">Ready</span>
           <span id="tClock">00:00</span>
+          <span class="subclock">phase <b id="tPhaseClock">00:00</b></span>
         </div>
         <div class="timer-btns">
           <button class="btn-primary" id="btnStart">Start roast</button>
@@ -304,8 +321,13 @@
         <label for="p4on" style="margin:0;text-transform:none;letter-spacing:0">Add Additional Step</label>
       </div>
 
+      <div class="field" style="margin-top:14px">
+        <label for="roasted">Roasted out (g)</label>
+        <input type="number" id="roasted" min="0" step="1" placeholder="210">
+      </div>
+
       <div class="curve-wrap">
-        <svg id="curve" viewBox="0 0 520 180" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Roast profile curve"></svg>
+        <svg id="curve" role="img" aria-label="Roast profile curve"></svg>
         <div class="curve-cap"><span id="capLeft">temp vs. time</span><span id="capRight"></span></div>
       </div>
     </section>
@@ -314,6 +336,7 @@
   <!-- ================= SAVE ================= -->
   <div class="savebar">
     <button class="btn-primary" id="btnSave">Save to Sheet</button>
+    <button class="btn-ghost" id="btnNew">New roast</button>
     <button class="btn-ghost" id="btnCsv">Download CSV</button>
     <span class="status" id="status"></span>
   </div>
@@ -367,6 +390,8 @@ const PHASES = [
   { key:"p4", name:"Additional", enabled:false, optional:true  }
 ];
 let rating = 0;                 // 0–5 in 0.5 steps
+let favorite = false;           // a simple flag, separate from the star rating
+let editingSavedAt = null;      // when set, Save updates this existing row instead of adding a new one
 let timer = { t0:null, phaseStart:null, idx:0, raf:null, running:false, fcMs:null, scMs:null };
 const session = [];             // saved roasts this session
 
@@ -378,7 +403,15 @@ reflectUrlSaved();   // show whether the URL is remembered on this device
 
 /* ---------- build phase rows ---------- */
 function buildPhaseRows(){
-  const tb = $("phaseRows"); tb.innerHTML = "";
+  const tb = $("phaseRows");
+  // snapshot whatever the user already typed, so a rebuild doesn't wipe it
+  const prev = {};
+  PHASES.forEach(p=>{
+    const t=$(p.key+"temp"), d=$(p.key+"dur");
+    if(t) prev[p.key+"temp"]=t.value;
+    if(d) prev[p.key+"dur"]=d.value;
+  });
+  tb.innerHTML = "";
   PHASES.forEach((p,i)=>{
     const tr = document.createElement("tr");
     tr.className = p.enabled ? "" : "phase-disabled";
@@ -388,11 +421,11 @@ function buildPhaseRows(){
       '<td><input type="number" inputmode="decimal" step="0.1" id="'+p.key+'dur" '+(p.enabled?"":"disabled")+' placeholder="—"></td>';
     tb.appendChild(tr);
   });
-  // re-attach listeners
+  // restore values + re-attach listeners
   PHASES.forEach(p=>{
     const t=$(p.key+"temp"), d=$(p.key+"dur");
-    if(t) t.addEventListener("input", render);
-    if(d) d.addEventListener("input", render);
+    if(t){ if(prev[p.key+"temp"]!=null) t.value=prev[p.key+"temp"]; t.addEventListener("input", render); }
+    if(d){ if(prev[p.key+"dur"]!=null) d.value=prev[p.key+"dur"]; d.addEventListener("input", render); }
   });
 }
 buildPhaseRows();
@@ -443,6 +476,16 @@ function paintTo(value){
 function paintStars(){ paintTo(rating); }   // the committed value is the source of truth
 buildStars();
 
+/* ---------- favorite toggle ---------- */
+function paintFav(){
+  const b=$("favBtn");
+  b.classList.toggle("on", favorite);
+  b.setAttribute("aria-pressed", favorite);
+  b.textContent = (favorite ? "♥" : "♡") + " Favorite";
+}
+$("favBtn").addEventListener("click", ()=>{ favorite = !favorite; paintFav(); });
+paintFav();
+
 /* ---------- timer ---------- */
 function activePhases(){ return PHASES.filter(p=>p.enabled); }
 function fmt(ms){
@@ -451,7 +494,9 @@ function fmt(ms){
 }
 function tick(){
   if(!timer.running) return;
-  $("tClock").textContent = fmt(Date.now()-timer.t0);
+  const now = Date.now();
+  $("tClock").textContent = fmt(now - timer.t0);              // total since start
+  $("tPhaseClock").textContent = fmt(now - timer.phaseStart); // current phase (resets each mark)
   timer.raf = requestAnimationFrame(tick);
 }
 $("btnStart").addEventListener("click", ()=>{
@@ -471,6 +516,7 @@ $("btnMark").addEventListener("click", ()=>{
   const mins = (Date.now()-timer.phaseStart)/60000;
   $(cur.key+"dur").value = mins.toFixed(2);
   timer.phaseStart = Date.now();
+  $("tPhaseClock").textContent = "00:00";          // phase timer restarts for the next phase
   timer.idx++;
   if(timer.idx >= ap.length){            // finished last phase
     timer.running = false;
@@ -483,11 +529,14 @@ $("btnMark").addEventListener("click", ()=>{
     $("tPhase").textContent = ap[timer.idx].name;
   }
   render();
+  // jump focus to the temp box for the phase you just marked, so you can type it right away
+  const tEl = $(cur.key+"temp");
+  if(tEl){ tEl.focus(); tEl.select(); }
 });
 $("btnReset").addEventListener("click", ()=>{
   timer.running=false; cancelAnimationFrame(timer.raf);
   timer.t0=null; timer.idx=0; timer.fcMs=null; timer.scMs=null;
-  $("tClock").textContent="00:00"; $("tPhase").textContent="Ready";
+  $("tClock").textContent="00:00"; $("tPhaseClock").textContent="00:00"; $("tPhase").textContent="Ready";
   $("btnStart").disabled=false; $("btnMark").disabled=true;
   $("btnFC").disabled=true; $("btnSC").disabled=true;
   paintCracks(); render();
@@ -526,7 +575,7 @@ function gather(){
     p4dur :PHASES[3].enabled?num("p4dur") :null,
     fcMin: timer.fcMs!=null ? +(timer.fcMs/60000).toFixed(2) : null,
     scMin: timer.scMs!=null ? +(timer.scMs/60000).toFixed(2) : null,
-    rating, notes:$("notes").value.trim()
+    rating, favorite, notes:$("notes").value.trim()
   };
 }
 function render(){
@@ -551,7 +600,12 @@ function render(){
 
 /* ---------- roast curve (inline SVG) ---------- */
 function drawCurve(d, total){
-  const svg=$("curve"); const W=520,H=180,padL=10,padR=10,padT=14,padB=22;
+  const svg=$("curve");
+  // draw at the SVG's actual on-screen size so strokes/labels stay consistent
+  const W = Math.max(svg.clientWidth  || (svg.parentElement && svg.parentElement.clientWidth) || 520, 200);
+  const H = Math.max(svg.clientHeight || 180, 110);
+  svg.setAttribute("viewBox", "0 0 "+W+" "+H);
+  const padL=12,padR=12,padT=16,padB=22;
   // points: cumulative time at each enabled phase end, with that phase's temp
   const seq=[
     {temp:d.p1temp,dur:d.p1dur,on:PHASES[0].enabled},
@@ -563,7 +617,7 @@ function drawCurve(d, total){
   seq.forEach(s=>{ if(s.on && s.dur!=null){ t+=s.dur; if(s.temp!=null) pts.push({x:t,y:s.temp}); } });
 
   if(pts.length<1){
-    svg.innerHTML='<text x="260" y="95" fill="#9A8B7B" font-size="12" text-anchor="middle" font-family="ui-monospace,monospace">enter temps + durations to draw the curve</text>';
+    svg.innerHTML='<text x="'+(W/2)+'" y="'+(H/2)+'" fill="#9A8B7B" font-size="12" text-anchor="middle" font-family="ui-monospace,monospace">enter temps + durations to draw the curve</text>';
     $("capRight").textContent=""; return;
   }
   const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
@@ -605,6 +659,16 @@ function drawCurve(d, total){
   $("capRight").textContent = total>0 ? total.toFixed(1)+" min total" : "";
 }
 
+// redraw the curve at the new size whenever the card resizes (window, layout, orientation)
+if(window.ResizeObserver){
+  let pending=false;
+  const ro=new ResizeObserver(()=>{
+    if(pending) return; pending=true;
+    requestAnimationFrame(()=>{ pending=false; render(); });
+  });
+  ro.observe($("curve"));
+}
+
 /* ---------- bind batch inputs ---------- */
 ["date","origin","process","green","roasted","preheated","notes"]
   .forEach(id=>$(id).addEventListener("input", render));
@@ -625,12 +689,53 @@ function reflectUrlSaved(){
 }
 $("url").addEventListener("input", reflectUrlSaved);
 
+// edit mode: when a past roast is open, Save becomes "Update" and rewrites that row
+function setEditing(savedAt){
+  editingSavedAt = savedAt || null;
+  $("btnSave").textContent = editingSavedAt ? "Update roast" : "Save to Sheet";
+}
+// reflect an in-place edit in the already-loaded history list without a reload
+function patchHistory(d){
+  const i = roastHistory.findIndex(x=>x.savedAt===editingSavedAt);
+  if(i<0) return;
+  const loss = (d.green&&d.roasted) ? +(((d.green-d.roasted)/d.green)*100).toFixed(1) : null;
+  const durs = [d.p1dur,d.p2dur,d.p3dur,d.p4dur].filter(x=>x!=null);
+  const total = durs.length ? +durs.reduce((a,b)=>a+b,0).toFixed(1) : null;
+  roastHistory[i] = { savedAt:editingSavedAt, date:d.date, origin:d.origin, process:d.process,
+    preheated:d.preheated, green:d.green, roasted:d.roasted,
+    p1temp:d.p1temp,p1dur:d.p1dur,p2temp:d.p2temp,p2dur:d.p2dur,
+    p3temp:d.p3temp,p3dur:d.p3dur,p4temp:d.p4temp,p4dur:d.p4dur,
+    fcMin:d.fcMin,scMin:d.scMin, rating:d.rating, favorite:d.favorite, notes:d.notes,
+    loss, totalMin:total };
+  renderHistory();
+}
+
+// clear everything back to a fresh roast (also cancels edit mode)
+function clearForm(){
+  $("date").value = new Date().toISOString().slice(0,10);
+  ["origin","green","roasted","notes"].forEach(id=>$(id).value="");
+  $("process").selectedIndex = 0;
+  $("preheated").checked = true;
+  PHASES[3].enabled=false; $("p4on").checked=false; buildPhaseRows();
+  ["p1temp","p1dur","p2temp","p2dur","p3temp","p3dur","p4temp","p4dur"].forEach(id=>{ const el=$(id); if(el) el.value=""; });
+  rating=0; paintStars();
+  favorite=false; paintFav();
+  timer.running=false; cancelAnimationFrame(timer.raf);
+  timer.t0=null; timer.idx=0; timer.fcMs=null; timer.scMs=null;
+  $("tClock").textContent="00:00"; $("tPhaseClock").textContent="00:00"; $("tPhase").textContent="Ready";
+  $("btnStart").disabled=false; $("btnMark").disabled=true; $("btnFC").disabled=true; $("btnSC").disabled=true;
+  paintCracks(); setEditing(null); render(); setStatus("");
+}
+$("btnNew").addEventListener("click", clearForm);
+
 $("btnSave").addEventListener("click", async ()=>{
   const url = $("url").value.trim();
   const d = gather();
   if(!d.origin){ setStatus("Add an origin first.", "err"); return; }
   if(!url){ setStatus("Add your Apps Script URL in Connection settings.", "err"); $("settings").open=true; return; }
-  setStatus("Saving…");
+  const editing = editingSavedAt;
+  if(editing){ d.action = "update"; d.savedAt = editing; }
+  setStatus(editing ? "Updating…" : "Saving…");
   try{
     await fetch(url, {
       method:"POST",
@@ -638,8 +743,14 @@ $("btnSave").addEventListener("click", async ()=>{
       headers:{ "Content-Type":"text/plain;charset=utf-8" }, // "simple" request → no preflight
       body: JSON.stringify(d)
     });
-    setStatus("Sent to sheet ✓  (check your spreadsheet)", "ok");
-    addToLog(d);
+    if(editing){
+      patchHistory(d);
+      setEditing(null);
+      setStatus("Updated ✓  (check your spreadsheet)", "ok");
+    } else {
+      addToLog(d);
+      setStatus("Sent to sheet ✓  (check your spreadsheet)", "ok");
+    }
   }catch(err){
     setStatus("Couldn't reach the sheet: "+err.message, "err");
   }
@@ -706,6 +817,7 @@ function loadHistory(){
 function normalizeRoast(r){
   const n = v => (v==="" || v==null) ? null : (typeof v==="number" ? v : (isFinite(parseFloat(v))?parseFloat(v):v));
   return {
+    savedAt: r.savedAt || "",        // unique key (the "Saved at" timestamp) used for deletes
     date: r.date ? String(r.date).slice(0,10) : "",
     origin: r.origin || "", process: r.process || "",
     preheated: r.preheated === true || r.preheated === "TRUE" || r.preheated === "true",
@@ -714,6 +826,7 @@ function normalizeRoast(r){
     p3temp:n(r.p3temp), p3dur:n(r.p3dur), p4temp:n(r.p4temp), p4dur:n(r.p4dur),
     fcMin:n(r.fcMin), scMin:n(r.scMin),
     rating:n(r.rating)||0, notes:r.notes || "",
+    favorite: r.favorite === true || r.favorite === "TRUE" || r.favorite === "true",
     loss:n(r.loss), totalMin:n(r.totalMin)
   };
 }
@@ -746,19 +859,21 @@ function renderHistory(){
   const body = $("histBody");
   const needle = ($("histSearch").value||"").trim().toLowerCase();
   let rows = roastHistory.filter(r=>
-    !needle || (r.origin+" "+r.process+" "+r.notes+" "+r.date).toLowerCase().includes(needle));
+    !needle || (r.origin+" "+r.process+" "+r.notes+" "+r.date+(r.favorite?" favorite favorites fav ♥":"")).toLowerCase().includes(needle));
   rows = sortRoasts(rows);
   if(!rows.length){ body.innerHTML='<div class="empty">'+(roastHistory.length?"No roasts match that search.":"Nothing loaded yet.")+'</div>'; return; }
 
   const arrow = k => histSort.key===k ? (histSort.dir==='asc'?' \u25B2':' \u25BC') : '';
-  const head = HIST_COLS.map(c=>'<th class="sortable" data-key="'+c.key+'">'+c.label+arrow(c.key)+'</th>').join('')+'<th></th>';
+  const head = '<th></th>'+HIST_COLS.map(c=>'<th class="sortable" data-key="'+c.key+'">'+c.label+arrow(c.key)+'</th>').join('')+'<th></th><th></th>';
   let html='<table><thead><tr>'+head+'</tr></thead><tbody>';
   rows.forEach(r=>{
     const idx = roastHistory.indexOf(r);
     html+='<tr class="hist-row" data-i="'+idx+'">'+
+      '<td><button class="hist-fav'+(r.favorite?' on':'')+'" data-i="'+idx+'" aria-label="Toggle favorite">'+(r.favorite?'♥':'♡')+'</button></td>'+
       '<td>'+(r.date||"—")+'</td><td>'+(r.origin||"—")+'</td><td>'+(r.process||"—")+'</td>'+
       '<td>'+(r.loss!=null?r.loss:"—")+'</td><td>'+(r.totalMin!=null?r.totalMin:"—")+'</td>'+
-      '<td>'+(r.rating||"—")+'</td><td class="hist-load">Open ›</td></tr>';
+      '<td>'+(r.rating||"—")+'</td><td class="hist-load">Edit ›</td>'+
+      '<td><button class="hist-del" data-i="'+idx+'" aria-label="Delete roast">✕</button></td></tr>';
   });
   html+='</tbody></table>';
   body.innerHTML=html;
@@ -770,6 +885,59 @@ function renderHistory(){
     else { histSort.key=k; histSort.dir = (col&&col.num)||k==='date' ? 'desc' : 'asc'; }
     renderHistory();
   }));
+  // delete buttons: first click arms (turns into "Delete?"), second click confirms
+  body.querySelectorAll(".hist-del").forEach(btn=>{
+    let armed=false, t=null;
+    btn.addEventListener("click", e=>{
+      e.stopPropagation();                       // don't trigger the row's "open" handler
+      if(!armed){ armed=true; btn.textContent="Delete?"; btn.classList.add("arm");
+        t=setTimeout(()=>{ armed=false; btn.textContent="✕"; btn.classList.remove("arm"); },3000); return; }
+      clearTimeout(t);
+      deleteRoast(roastHistory[+btn.dataset.i]);
+    });
+  });
+  // heart buttons: single click toggles favorite (non-destructive)
+  body.querySelectorAll(".hist-fav").forEach(btn=>{
+    btn.addEventListener("click", e=>{ e.stopPropagation(); toggleFav(roastHistory[+btn.dataset.i]); });
+  });
+}
+
+// Toggle a roast's favorite flag, updating the sheet (matched by savedAt) and the list.
+function toggleFav(r){
+  if(!r) return;
+  const url = $("url").value.trim();
+  if(!url){ setHistStatus("Add your Apps Script URL in Connection settings first.","err"); $("settings").open=true; return; }
+  if(!r.savedAt){ setHistStatus("This roast has no saved-at id, so it can't be matched in the sheet.","err"); return; }
+  r.favorite = !r.favorite;          // optimistic update
+  renderHistory();
+  fetch(url, {
+    method:"POST", mode:"no-cors",
+    headers:{ "Content-Type":"text/plain;charset=utf-8" },
+    body: JSON.stringify({ action:"favorite", savedAt:r.savedAt, value:r.favorite })
+  }).then(()=>{
+    setHistStatus((r.favorite?"Favorited":"Unfavorited")+" (saved to sheet).","ok");
+  }).catch(err=>{
+    r.favorite = !r.favorite; renderHistory();   // roll back if the request never left
+    setHistStatus("Couldn't reach the sheet: "+err.message,"err");
+  });
+}
+
+// Remove a roast from the sheet (matched by its unique "Saved at" timestamp) and the list.
+function deleteRoast(r){
+  if(!r) return;
+  const url = $("url").value.trim();
+  if(!url){ setHistStatus("Add your Apps Script URL in Connection settings first.","err"); $("settings").open=true; return; }
+  if(!r.savedAt){ setHistStatus("This roast has no saved-at id, so it can't be matched in the sheet.","err"); return; }
+  setHistStatus("Deleting…");
+  fetch(url, {
+    method:"POST", mode:"no-cors",
+    headers:{ "Content-Type":"text/plain;charset=utf-8" },
+    body: JSON.stringify({ action:"delete", savedAt:r.savedAt })
+  }).then(()=>{
+    roastHistory = roastHistory.filter(x=>x!==r);   // optimistic local removal
+    renderHistory();
+    setHistStatus("Deleted (verify in your sheet).","ok");
+  }).catch(err=>setHistStatus("Couldn't reach the sheet: "+err.message,"err"));
 }
 
 // Pull a saved roast back into the form so you can view its curve or re-roast it.
@@ -794,9 +962,11 @@ function loadRoast(r){
   paintCracks();
 
   rating = r.rating || 0; paintStars();
+  favorite = !!r.favorite; paintFav();
+  setEditing(r.savedAt);                  // Save now updates this row in place
   render();
   window.scrollTo({top:0, behavior:"smooth"});
-  setHistStatus("Opened "+(r.origin||"roast")+" — "+(r.date||"")+".", "ok");
+  setHistStatus("Editing "+(r.origin||"roast")+" — "+(r.date||"")+". Save updates it; “New roast” starts fresh.", "ok");
 }
 
 $("btnLoad").addEventListener("click", loadHistory);
