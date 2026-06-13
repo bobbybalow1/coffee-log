@@ -750,8 +750,19 @@ $("btnSave").addEventListener("click", async ()=>{
       setEditing(null);
       setStatus("Updated ✓  (check your spreadsheet)", "ok");
     } else {
-      addToLog(d);
-      setStatus("Sent to sheet ✓  (check your spreadsheet)", "ok");
+      // the POST reply is unreadable (CORS), so confirm the write actually
+      // landed by reading the sheet back and looking for this roast
+      setStatus("Saving… confirming…");
+      jsonpGet(url, (data)=>{
+        const rows = (data && data.roasts) || [];
+        const ts = (d.timestamp||"").slice(0,19);
+        if(rows.some(r=>String(r.savedAt).slice(0,19)===ts)){
+          roastHistory = rows.map(normalizeRoast); renderHistory(); addToLog(d);
+          setStatus("Saved ✓ — confirmed in your sheet ("+rows.length+" total).", "ok");
+        } else {
+          setStatus("It didn't land in the sheet — your live Apps Script is out of date. See the fix below.", "err");
+        }
+      }, ()=> setStatus("Saved, but couldn't read back to confirm (connection issue).", "err"));
     }
   }catch(err){
     setStatus("Couldn't reach the sheet: "+err.message, "err");
