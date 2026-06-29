@@ -106,6 +106,7 @@
   .btn-primary{background:var(--ember);color:#1a0e07}
   .btn-mark{background:var(--hot);color:#2a1c00}
   .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  .btn-stop{background:transparent;color:var(--bad);border:1px solid var(--bad)}
   button:disabled{opacity:.4;cursor:not-allowed}
 
   /* ---------- Cracks ---------- */
@@ -125,6 +126,11 @@
   td .pname{font-size:13px;color:var(--cream)}
   td input{padding:7px 8px;font-family:var(--mono);text-align:right}
   .phase-disabled{opacity:.4}
+  .phase-off .pname{color:var(--muted);text-decoration:line-through}
+  .phase-off input{opacity:.45}
+  .phase-toggle{background:transparent;border:0.5px solid var(--line);color:var(--muted);
+    border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:13px;line-height:1;padding:0}
+  .phase-toggle:hover{color:var(--ember);border-color:var(--ember)}
   .p4toggle{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}
   .p4toggle input{width:16px;height:16px;accent-color:var(--ember)}
 
@@ -253,7 +259,8 @@
 
       <div class="field">
         <label for="origin">Origin</label>
-        <input type="text" id="origin" placeholder="e.g. Ethiopia Yirgacheffe">
+        <input type="text" id="origin" list="originList" placeholder="e.g. Ethiopia Yirgacheffe" autocomplete="off">
+        <datalist id="originList"></datalist>
       </div>
 
       <div class="field">
@@ -299,6 +306,7 @@
         <div class="timer-btns">
           <button class="btn-primary" id="btnStart">Start roast</button>
           <button class="btn-mark" id="btnMark" disabled>Mark phase</button>
+          <button class="btn-stop" id="btnStop" disabled>Stop roast</button>
           <button class="btn-ghost" id="btnReset">Reset timer</button>
         </div>
       </div>
@@ -313,13 +321,9 @@
       </div>
 
       <table>
-        <thead><tr><th>Phase</th><th style="text-align:right">Temp (°F)</th><th style="text-align:right">Duration (min)</th></tr></thead>
+        <thead><tr><th>Phase</th><th style="text-align:right">Temp (°F)</th><th style="text-align:right">Duration (m:ss)</th><th></th></tr></thead>
         <tbody id="phaseRows"></tbody>
       </table>
-      <div class="p4toggle">
-        <input type="checkbox" id="p4on">
-        <label for="p4on" style="margin:0;text-transform:none;letter-spacing:0">Add Additional Step</label>
-      </div>
 
       <div class="field" style="margin-top:14px">
         <label for="roasted">Roasted out (g)</label>
@@ -416,27 +420,29 @@ function buildPhaseRows(){
   tb.innerHTML = "";
   PHASES.forEach((p,i)=>{
     const tr = document.createElement("tr");
-    tr.className = p.enabled ? "" : "phase-disabled";
+    tr.className = p.enabled ? "" : "phase-off";
+    const dis = p.enabled ? "" : "disabled";
     tr.innerHTML =
       '<td><span class="pname">'+p.name+'</span></td>'+
-      '<td><input type="number" inputmode="decimal" id="'+p.key+'temp" '+(p.enabled?"":"disabled")+' placeholder="—"></td>'+
-      '<td><input type="number" inputmode="decimal" step="0.1" id="'+p.key+'dur" '+(p.enabled?"":"disabled")+' placeholder="—"></td>';
+      '<td><input type="number" inputmode="decimal" id="'+p.key+'temp" '+dis+' placeholder="'+(p.enabled?"—":"N/A")+'"></td>'+
+      '<td><input type="text" inputmode="text" id="'+p.key+'dur" '+dis+' placeholder="'+(p.enabled?"m:ss":"N/A")+'"></td>'+
+      '<td><button type="button" class="phase-toggle" data-key="'+p.key+'" title="'+(p.enabled?"Remove this phase":"Add this phase")+'" aria-label="'+(p.enabled?"Remove":"Add")+' '+p.name+'">'+(p.enabled?"✕":"+")+'</button></td>';
     tb.appendChild(tr);
   });
   // restore values + re-attach listeners
   PHASES.forEach(p=>{
     const t=$(p.key+"temp"), d=$(p.key+"dur");
     if(t){ if(prev[p.key+"temp"]!=null) t.value=prev[p.key+"temp"]; t.addEventListener("input", render); }
-    if(d){ if(prev[p.key+"dur"]!=null) d.value=prev[p.key+"dur"]; d.addEventListener("input", render); }
+    if(d){ if(prev[p.key+"dur"]!=null) d.value=prev[p.key+"dur"]; d.addEventListener("input", render); d.addEventListener("change", ()=>normalizeDur(d)); }
   });
+  tb.querySelectorAll(".phase-toggle").forEach(b=>b.addEventListener("click", ()=>{
+    const p = PHASES.find(x=>x.key===b.dataset.key);
+    p.enabled = !p.enabled;
+    buildPhaseRows();
+    render();
+  }));
 }
 buildPhaseRows();
-
-$("p4on").addEventListener("change", e=>{
-  PHASES[3].enabled = e.target.checked;
-  buildPhaseRows();
-  render();
-});
 
 /* ---------- stars (half-step, with hover preview) ---------- */
 const STAR_PATH = "M15 2 l3.8 7.7 8.5 1.2 -6.1 6 1.4 8.5 -7.6 -4 -7.6 4 1.4 -8.5 -6.1 -6 8.5 -1.2 Z";
@@ -494,6 +500,35 @@ function fmt(ms){
   const s = Math.floor(ms/1000);
   return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
 }
+// decimal minutes -> "m:ss" for display
+function minToClock(mins){
+  if(mins==null || !isFinite(mins)) return "";
+  const total = Math.round(mins*60);
+  return Math.floor(total/60)+":"+String(total%60).padStart(2,"0");
+}
+// "m:ss", "m ss", or a decimal number of minutes -> decimal minutes
+function clockToMin(str){
+  if(str==null) return null;
+  str = String(str).trim();
+  if(str==="") return null;
+  let sep = null;
+  if(str.indexOf(":")>=0) sep = ":";
+  else if(/\s/.test(str)) sep = /\s+/;       // "6 30" = 6 min 30 sec (easy on a phone)
+  if(sep){
+    const p = str.split(sep);
+    const m = parseFloat(p[0]||"0"), s = parseFloat(p[1]||"0");
+    if(!isFinite(m) || !isFinite(s)) return null;
+    return m + s/60;
+  }
+  const v = parseFloat(str);                 // "6.5" = 6 min 30 sec
+  return isFinite(v) ? v : null;
+}
+// reformat a duration field to canonical m:ss after the user finishes typing
+function normalizeDur(el){
+  const m = clockToMin(el.value);
+  el.value = (m==null ? "" : minToClock(m));
+  render();
+}
 function tick(){
   if(!timer.running) return;
   const now = Date.now();
@@ -505,7 +540,7 @@ $("btnStart").addEventListener("click", ()=>{
   timer.t0 = Date.now(); timer.phaseStart = timer.t0; timer.idx = 0; timer.running = true;
   timer.fcMs = null; timer.scMs = null;          // clear cracks for the new roast
   $("btnStart").disabled = true; $("btnMark").disabled = false;
-  $("btnFC").disabled = false; $("btnSC").disabled = false;
+  $("btnFC").disabled = false; $("btnSC").disabled = false; $("btnStop").disabled = false;
   paintCracks();
   const ap = activePhases();
   $("tPhase").textContent = ap.length ? ap[0].name : "—";
@@ -516,7 +551,7 @@ $("btnMark").addEventListener("click", ()=>{
   const ap = activePhases();
   const cur = ap[timer.idx];
   const mins = (Date.now()-timer.phaseStart)/60000;
-  $(cur.key+"dur").value = mins.toFixed(2);
+  $(cur.key+"dur").value = minToClock(mins);
   timer.phaseStart = Date.now();
   $("tPhaseClock").textContent = "00:00";          // phase timer restarts for the next phase
   timer.idx++;
@@ -525,7 +560,7 @@ $("btnMark").addEventListener("click", ()=>{
     cancelAnimationFrame(timer.raf);
     $("tPhase").textContent = "Done";
     $("btnMark").disabled = true;
-    $("btnFC").disabled = true; $("btnSC").disabled = true;
+    $("btnFC").disabled = true; $("btnSC").disabled = true; $("btnStop").disabled = true;
     $("btnStart").disabled = false;
   } else {
     $("tPhase").textContent = ap[timer.idx].name;
@@ -535,12 +570,28 @@ $("btnMark").addEventListener("click", ()=>{
   const tEl = $(cur.key+"temp");
   if(tEl){ tEl.focus(); tEl.select(); }
 });
+// Stop roast: record the in-progress phase's time and end now, even if phases remain
+$("btnStop").addEventListener("click", ()=>{
+  if(!timer.running) return;
+  const ap = activePhases();
+  const cur = ap[timer.idx];
+  if(cur){
+    const mins = (Date.now()-timer.phaseStart)/60000;
+    $(cur.key+"dur").value = minToClock(mins);
+  }
+  timer.running = false;
+  cancelAnimationFrame(timer.raf);
+  $("tPhase").textContent = "Stopped";
+  $("btnMark").disabled = true; $("btnFC").disabled = true; $("btnSC").disabled = true; $("btnStop").disabled = true;
+  $("btnStart").disabled = false;
+  render();
+});
 $("btnReset").addEventListener("click", ()=>{
   timer.running=false; cancelAnimationFrame(timer.raf);
   timer.t0=null; timer.idx=0; timer.fcMs=null; timer.scMs=null;
   $("tClock").textContent="00:00"; $("tPhaseClock").textContent="00:00"; $("tPhase").textContent="Ready";
   $("btnStart").disabled=false; $("btnMark").disabled=true;
-  $("btnFC").disabled=true; $("btnSC").disabled=true;
+  $("btnFC").disabled=true; $("btnSC").disabled=true; $("btnStop").disabled=true;
   paintCracks(); render();
 });
 
@@ -564,37 +615,41 @@ $("btnSC").addEventListener("click", ()=>markCrack("sc"));
 
 /* ---------- computed readouts ---------- */
 function num(id){ const v=parseFloat(($(id)||{}).value); return isFinite(v)?v:null; }
+function durVal(id){ const el=$(id); return el ? clockToMin(el.value) : null; }   // m:ss -> minutes
 function gather(){
+  // removed phases write "N/A" so the sheet records that the step wasn't done
+  const pt = (i,id)=> PHASES[i].enabled ? num(id)    : "N/A";
+  const pd = (i,id)=> PHASES[i].enabled ? durVal(id) : "N/A";
   return {
     timestamp:new Date().toISOString(),
     date:$("date").value, origin:$("origin").value.trim(),
     process:$("process").value, preheated:$("preheated").checked,
     green:num("green"), roasted:num("roasted"),
-    p1temp:num("p1temp"), p1dur:num("p1dur"),
-    p2temp:num("p2temp"), p2dur:num("p2dur"),
-    p3temp:num("p3temp"), p3dur:num("p3dur"),
-    p4temp:PHASES[3].enabled?num("p4temp"):null,
-    p4dur :PHASES[3].enabled?num("p4dur") :null,
+    p1temp:pt(0,"p1temp"), p1dur:pd(0,"p1dur"),
+    p2temp:pt(1,"p2temp"), p2dur:pd(1,"p2dur"),
+    p3temp:pt(2,"p3temp"), p3dur:pd(2,"p3dur"),
+    p4temp:pt(3,"p4temp"), p4dur:pd(3,"p4dur"),
     fcMin: timer.fcMs!=null ? +(timer.fcMs/60000).toFixed(2) : null,
     scMin: timer.scMs!=null ? +(timer.scMs/60000).toFixed(2) : null,
     rating, favorite, notes:$("notes").value.trim()
   };
 }
+const isNum = x => typeof x==="number" && isFinite(x);
 function render(){
   const d = gather();
   // weight loss
   if(d.green && d.roasted && d.roasted <= d.green){
     $("rLoss").innerHTML = ((d.green-d.roasted)/d.green*100).toFixed(1)+'<small> %</small>';
   } else $("rLoss").textContent = "—";
-  // total time
-  const durs=[d.p1dur,d.p2dur,d.p3dur,d.p4dur].filter(x=>x!=null);
+  // total time (only real numbers — skips removed phases' "N/A")
+  const durs=[d.p1dur,d.p2dur,d.p3dur,d.p4dur].filter(isNum);
   const total = durs.reduce((a,b)=>a+b,0);
-  $("rTotal").innerHTML = total>0 ? total.toFixed(1)+'<small> min</small>' : "—";
+  $("rTotal").innerHTML = total>0 ? minToClock(total)+'<small> m:ss</small>' : "—";
   // development ratio: prefer true value (time from first crack to end of roast),
   // fall back to Phase III / total when no crack was marked
   if(d.fcMin!=null && total>0){
     $("rDtr").innerHTML = (Math.max(0,(total-d.fcMin))/total*100).toFixed(0)+'<small> %</small>';
-  } else if(d.p3dur!=null && total>0){
+  } else if(isNum(d.p3dur) && total>0){
     $("rDtr").innerHTML = (d.p3dur/total*100).toFixed(0)+'<small> %</small>';
   } else $("rDtr").textContent="—";
   drawCurve(d, total);
@@ -623,8 +678,12 @@ function drawCurve(d, total){
     $("capRight").textContent=""; return;
   }
   const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
-  const xMax=Math.max(...xs,1), yMin=Math.min(...ys)-15, yMax=Math.max(...ys)+15;
-  const sx=x=>padL+(x/xMax)*(W-padL-padR);
+  const xMin=Math.min(...xs), xMax=Math.max(...xs);
+  const yMin=Math.min(...ys)-15, yMax=Math.max(...ys)+15;
+  const xSpan=xMax-xMin;
+  // map the first point to the left edge and the last to the right edge (fills the width);
+  // a single point sits centered
+  const sx = xSpan>0 ? (x=>padL+((x-xMin)/xSpan)*(W-padL-padR)) : (()=>padL+(W-padL-padR)/2);
   const sy=y=>H-padB-((y-yMin)/(yMax-yMin||1))*(H-padT-padB);
 
   let poly=pts.map(p=>sx(p.x).toFixed(1)+","+sy(p.y).toFixed(1)).join(" ");
@@ -639,7 +698,7 @@ function drawCurve(d, total){
   // vertical markers for first / second crack (same minutes-from-start axis as the curve)
   function crackMark(min,label){
     if(min==null) return "";
-    const x = sx(Math.min(min, xMax)).toFixed(1);
+    const x = sx(Math.max(xMin, Math.min(min, xMax))).toFixed(1);
     return '<line x1="'+x+'" y1="'+padT+'" x2="'+x+'" y2="'+(H-padB)+'" stroke="#9A8B7B" stroke-width="1" stroke-dasharray="3 3"/>'+
            '<text x="'+x+'" y="'+(padT+8)+'" fill="#9A8B7B" font-size="9" text-anchor="middle" font-family="ui-monospace,monospace">'+label+'</text>';
   }
@@ -718,14 +777,16 @@ function clearForm(){
   ["origin","green","roasted","notes"].forEach(id=>$(id).value="");
   $("process").selectedIndex = 0;
   $("preheated").checked = true;
-  PHASES[3].enabled=false; $("p4on").checked=false; buildPhaseRows();
+  // reset phases to the default set: Drying, Roasting, Developing on; Additional off
+  PHASES[0].enabled=true; PHASES[1].enabled=true; PHASES[2].enabled=true; PHASES[3].enabled=false;
+  buildPhaseRows();
   ["p1temp","p1dur","p2temp","p2dur","p3temp","p3dur","p4temp","p4dur"].forEach(id=>{ const el=$(id); if(el) el.value=""; });
   rating=0; paintStars();
   favorite=false; paintFav();
   timer.running=false; cancelAnimationFrame(timer.raf);
   timer.t0=null; timer.idx=0; timer.fcMs=null; timer.scMs=null;
   $("tClock").textContent="00:00"; $("tPhaseClock").textContent="00:00"; $("tPhase").textContent="Ready";
-  $("btnStart").disabled=false; $("btnMark").disabled=true; $("btnFC").disabled=true; $("btnSC").disabled=true;
+  $("btnStart").disabled=false; $("btnMark").disabled=true; $("btnFC").disabled=true; $("btnSC").disabled=true; $("btnStop").disabled=true;
   paintCracks(); setEditing(null); render(); setStatus("");
 }
 $("btnNew").addEventListener("click", clearForm);
@@ -779,7 +840,7 @@ function addToLog(d){
   session.forEach(r=>{
     const loss=(r.green&&r.roasted)?((r.green-r.roasted)/r.green*100).toFixed(1):"—";
     const tot=[r.p1dur,r.p2dur,r.p3dur,r.p4dur].filter(x=>x!=null).reduce((a,b)=>a+b,0);
-    html+='<tr><td>'+r.date+'</td><td>'+r.origin+'</td><td>'+loss+'</td><td>'+(tot?tot.toFixed(1):"—")+'</td><td>'+(r.rating||"—")+'</td></tr>';
+    html+='<tr><td>'+r.date+'</td><td>'+r.origin+'</td><td>'+loss+'</td><td>'+(tot?minToClock(tot):"—")+'</td><td>'+(r.rating||"—")+'</td></tr>';
   });
   html+='</tbody></table>';
   body.innerHTML=html;
@@ -859,7 +920,10 @@ $("btnTest").addEventListener("click", testConnection);
 
 // Sheet cells come back as numbers/dates/strings/blanks — tidy them for the app.
 function normalizeRoast(r){
-  const n = v => (v==="" || v==null) ? null : (typeof v==="number" ? v : (isFinite(parseFloat(v))?parseFloat(v):v));
+  const isNAcell = v => v==="N/A" || v==="-" || v==="n/a";
+  // numeric value, but treat the "phase not done" sentinel as empty
+  const n = v => (v==="" || v==null || isNAcell(v)) ? null : (typeof v==="number" ? v : (isFinite(parseFloat(v))?parseFloat(v):v));
+  const hasNum = v => v!=null && v!=="" && !isNAcell(v) && isFinite(parseFloat(v));
   return {
     savedAt: r.savedAt || "",        // unique key (the "Saved at" timestamp) used for deletes
     date: r.date ? String(r.date).slice(0,10) : "",
@@ -868,6 +932,11 @@ function normalizeRoast(r){
     green:n(r.green), roasted:n(r.roasted),
     p1temp:n(r.p1temp), p1dur:n(r.p1dur), p2temp:n(r.p2temp), p2dur:n(r.p2dur),
     p3temp:n(r.p3temp), p3dur:n(r.p3dur), p4temp:n(r.p4temp), p4dur:n(r.p4dur),
+    // which phases were actually done: I-III default on unless marked N/A; IV on only if it has data
+    p1on: !(isNAcell(r.p1temp) || isNAcell(r.p1dur)),
+    p2on: !(isNAcell(r.p2temp) || isNAcell(r.p2dur)),
+    p3on: !(isNAcell(r.p3temp) || isNAcell(r.p3dur)),
+    p4on: hasNum(r.p4temp) || hasNum(r.p4dur),
     fcMin:n(r.fcMin), scMin:n(r.scMin),
     rating:n(r.rating)||0, notes:r.notes || "",
     favorite: r.favorite === true || r.favorite === "TRUE" || r.favorite === "true",
@@ -899,7 +968,24 @@ function sortRoasts(rows){
   });
 }
 
+// Build the origin autocomplete list from previously logged roasts (plus a few
+// common starters so suggestions are useful before you've saved much).
+const ORIGIN_SEEDS = ["Ethiopia Yirgacheffe","Ethiopia Guji","Colombia Huila","Guatemala Antigua",
+  "Brazil Cerrado","Kenya AA","Costa Rica Tarrazu","Sumatra Mandheling"];
+function populateOrigins(){
+  const dl = $("originList");
+  if(!dl) return;
+  const seen = new Set(), out = [];
+  roastHistory.forEach(r=>{
+    const o = (r.origin||"").trim();
+    if(o && !seen.has(o.toLowerCase())){ seen.add(o.toLowerCase()); out.push(o); }
+  });
+  ORIGIN_SEEDS.forEach(o=>{ if(!seen.has(o.toLowerCase())){ seen.add(o.toLowerCase()); out.push(o); } });
+  dl.innerHTML = out.map(o=>'<option value="'+o.replace(/"/g,"&quot;")+'">').join("");
+}
+
 function renderHistory(){
+  populateOrigins();
   const body = $("histBody");
   const needle = ($("histSearch").value||"").trim().toLowerCase();
   let rows = roastHistory.filter(r=>
@@ -915,7 +1001,7 @@ function renderHistory(){
     html+='<tr class="hist-row" data-i="'+idx+'">'+
       '<td><button class="hist-fav'+(r.favorite?' on':'')+'" data-i="'+idx+'" aria-label="Toggle favorite">'+(r.favorite?'♥':'♡')+'</button></td>'+
       '<td>'+(r.date||"—")+'</td><td>'+(r.origin||"—")+'</td><td>'+(r.process||"—")+'</td>'+
-      '<td>'+(r.loss!=null?r.loss:"—")+'</td><td>'+(r.totalMin!=null?r.totalMin:"—")+'</td>'+
+      '<td>'+(r.loss!=null?r.loss:"—")+'</td><td>'+(r.totalMin!=null?minToClock(r.totalMin):"—")+'</td>'+
       '<td>'+(r.rating||"—")+'</td><td class="hist-load">Edit ›</td>'+
       '<td><button class="hist-del" data-i="'+idx+'" aria-label="Delete roast">✕</button></td></tr>';
   });
@@ -987,19 +1073,23 @@ function deleteRoast(r){
 // Pull a saved roast back into the form so you can view its curve or re-roast it.
 function loadRoast(r){
   const setVal = (id,v)=>{ const el=$(id); if(el) el.value = (v==null?"":v); };
+  const setDur = (id,v)=>{ const el=$(id); if(el) el.value = (v==null?"":minToClock(v)); };
   setVal("date", r.date); setVal("origin", r.origin); setVal("green", r.green); setVal("roasted", r.roasted);
   setVal("notes", r.notes);
   if(r.process) $("process").value = r.process;
   $("preheated").checked = !!r.preheated;
 
-  // turn on the Additional step if this roast used it, so its inputs exist
-  const needP4 = (r.p4temp!=null || r.p4dur!=null);
-  $("p4on").checked = needP4; PHASES[3].enabled = needP4; buildPhaseRows();
+  // restore which phases were done (a removed phase was saved as N/A)
+  PHASES[0].enabled = r.p1on !== false;
+  PHASES[1].enabled = r.p2on !== false;
+  PHASES[2].enabled = r.p3on !== false;
+  PHASES[3].enabled = !!r.p4on;
+  buildPhaseRows();
 
-  setVal("p1temp", r.p1temp); setVal("p1dur", r.p1dur);
-  setVal("p2temp", r.p2temp); setVal("p2dur", r.p2dur);
-  setVal("p3temp", r.p3temp); setVal("p3dur", r.p3dur);
-  if(needP4){ setVal("p4temp", r.p4temp); setVal("p4dur", r.p4dur); }
+  if(PHASES[0].enabled){ setVal("p1temp", r.p1temp); setDur("p1dur", r.p1dur); }
+  if(PHASES[1].enabled){ setVal("p2temp", r.p2temp); setDur("p2dur", r.p2dur); }
+  if(PHASES[2].enabled){ setVal("p3temp", r.p3temp); setDur("p3dur", r.p3dur); }
+  if(PHASES[3].enabled){ setVal("p4temp", r.p4temp); setDur("p4dur", r.p4dur); }
 
   timer.fcMs = r.fcMin!=null ? r.fcMin*60000 : null;   // feed crack markers + DTR
   timer.scMs = r.scMin!=null ? r.scMin*60000 : null;
@@ -1017,6 +1107,7 @@ $("btnLoad").addEventListener("click", loadHistory);
 $("histSearch").addEventListener("input", ()=>renderHistory());
 
 render();
+populateOrigins();   // seed origin suggestions even before history loads
 
 // if a sheet URL is already saved on this device, pull history automatically so
 // past roasts (with their edit/delete controls) show up without an extra click
